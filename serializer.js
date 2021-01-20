@@ -1,16 +1,20 @@
 'use strict';
 
 class TOML {
-    static stringify(value, replacer, space, key) {
-        const serializer = this.rules[this.checkType(value)];
-        if (!!serializer) {
-            if (!replacer) return serializer(value, key)
-            if (Array.isArray(replacer)) return serializer({ value, ...replacer }, key);
-            else if (replacer instanceof Function) return serializer(replacer(key, value), key)
-        }
+    stringify(value, replacer, space) {
+        this.space = '  ';
+        if (replacer instanceof Function) this.replacer = replacer;
+        if (Array.isArray(replacer)) return this.serialize(value);
+        return this.serialize(value, undefined, this.space)
     }
 
-    static checkType(el) {
+    serialize(value, key, prefix, postfix) {
+        const replaced = this.replacer ? this.replacer(key, value) : value;
+        const serializer = this.rules[this.checkType(replaced)];
+        if (!!serializer) return serializer(replaced, key, prefix, postfix);
+    }
+
+    checkType(el) {
         const type = typeof el;
         if (type === 'string') return 'string';
         if (type === 'number') return 'number';
@@ -23,26 +27,20 @@ class TOML {
         if (el !== null) return 'object';
     }
 
-    static rules = {
-        string: s => `"${s}"`,
-        number: n => n.toString(),
-        boolean: b => b.toString(),
-        date: d => d.toString(),
-        scalarArray: arr => {
-            const mapped = arr.map(el => this.stringify(el)).join(',');
-            return `[${mapped}]`;
+    rules = {
+        string: (s, key = '', prefix = '', postfix = '') => prefix + key + `"${s}"` + postfix,
+        number: (n, key = '', prefix = '', postfix = '') => prefix + key + n + postfix,
+        boolean: (b, key = '', prefix = '', postfix = '') => prefix + key + b + postfix,
+        date: (d, key = '', prefix = '', postfix = '') => prefix + key + d + postfix,
+        scalarArray: (arr, key = '', prefix = '', postfix = '') => {
+            const mapped = arr.map(el => this.serialize(el)).join(',');
+            return `${prefix}${key}[${mapped}]${postfix}`;
         },
-        objectArray: (arr, key) => {
-            let s = ``;
-
-            for (const value of arr) {
-                s += `[[${key}]]\n${this.stringify(value, undefined, undefined, key)}\n`
-            }
-            
-            return s;
+        objectArray: (arr, key, prefix = '', postfix = '') => {
+            return arr.map(el => `${prefix}${this.serialize(el, key, '[', ']\n')}`).join(postfix);
         },
-        object: (o, prev) => {
-            let s = '';
+        object: (o, prev, prefix = '', postfix = '') => {
+            let s = prev ? `${prefix}[${prev}]${postfix}` : '';
             const sorted = Object.entries(o).sort((a, b) => {
                 const typeA = this.checkType(a[1]);
                 const typeB = this.checkType(b[1]);
@@ -50,31 +48,28 @@ class TOML {
             });
             
             for (const [key, value] of sorted) {
-                const fixedKey = this.fixKey(key);
-
                 const type = this.checkType(value);
+                const fixedKey = this.fixKey(key);
                 const combinatedKey = prev ? `${prev}.${fixedKey}` : fixedKey;
 
-                if (type === 'object') {
-                    s += `[${combinatedKey}]\n`;
-                } else if (type !== 'objectArray') {
-                    s += `${key} = `;
+                if (type === 'object' || type === 'objectArray') {
+                    s += this.serialize(value, combinatedKey, '', '\n');
+                } else {
+                    s += this.serialize(value, `${fixedKey} = `, '', '\n')
                 }
-
-                s += `${this.stringify(value, undefined, undefined, combinatedKey)}\n`
             }
             return s;
         }
     }
 
-    static sortFields(a, b) {
+    sortFields(a, b) {
         if (a === b) return 0;
         if (a === 'object') return 1;
         if (b === 'object') return -1;
         return 0;
     }
 
-    static fixKey(key) {
+    fixKey(key) {
         return key.includes('.') ? `"${key}"` : key;
     }
 }
@@ -84,14 +79,23 @@ const test = {
     b: 'asdf',
     "c.r": { 
         d: { 
-            e: 1, 
+            e: true, 
             f: [2, 3, 4] 
         } ,
         l: 1
     },
     k: 2,
-    g: [{ y: 5, o: "9" }, { q: [{}, {}] }]
+    g: [
+        { y: 5, o: "9" },
+        { q: [ { i: 1 }, {} ] },
+        { x: { p: 19 } }
+    ]
 }
+function booleanNotAllowed(key, value) {
+    if (typeof value === 'boolean') return '<hidden>'
+    return value;
+}
+const Toml = new TOML();
 
-console.log(TOML.stringify(test))
+console.log(Toml.stringify(test, [{ u: 1 }]))
 // const entries = Object.entries(test);
