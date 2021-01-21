@@ -2,10 +2,16 @@
 
 class TOML {
     stringify(value, replacer, space) {
-        this.space = '  ';
+        this.space = space;
         if (replacer instanceof Function) this.replacer = replacer;
-        if (Array.isArray(replacer)) return this.serialize(value);
-        return this.serialize(value, undefined, this.space)
+        if (Array.isArray(replacer)) {
+            const filtered = replacer.reduce((acc, val) => {
+                acc[val] = value[val];
+                return acc;
+            }, {});
+            return this.serialize(filtered);
+        }
+        return this.serialize(value);
     }
 
     serialize(value, key, prefix, postfix) {
@@ -37,10 +43,10 @@ class TOML {
             return `${prefix}${key}[${mapped}]${postfix}`;
         },
         objectArray: (arr, key, prefix = '', postfix = '') => {
-            return arr.map(el => `${prefix}${this.serialize(el, key, '[', ']\n')}`).join(postfix);
+            return arr.map(el => `${this.serialize(el, key, `${prefix}[`, `]${postfix}`)}`).join('');
         },
         object: (o, prev, prefix = '', postfix = '') => {
-            let s = prev ? `${prefix}[${prev}]${postfix}` : '';
+            let s = prev ? `${prefix}${prev}${postfix}` : '';
             const sorted = Object.entries(o).sort((a, b) => {
                 const typeA = this.checkType(a[1]);
                 const typeB = this.checkType(b[1]);
@@ -52,10 +58,11 @@ class TOML {
                 const fixedKey = this.fixKey(key);
                 const combinatedKey = prev ? `${prev}.${fixedKey}` : fixedKey;
 
+                const space = this.additionalSpace(prefix);
                 if (type === 'object' || type === 'objectArray') {
-                    s += this.serialize(value, combinatedKey, '', '\n');
+                    s += this.serialize(value, combinatedKey, space + '[', ']\n');
                 } else {
-                    s += this.serialize(value, `${fixedKey} = `, '', '\n')
+                    s += this.serialize(value, `${fixedKey} = `, space, '\n')
                 }
             }
             return s;
@@ -71,6 +78,20 @@ class TOML {
 
     fixKey(key) {
         return key.includes('.') ? `"${key}"` : key;
+    }
+
+    additionalSpace(prefix) {
+        const type = this.checkType(this.space);
+        let s = ' ';
+        let length = prefix.length;
+        if (type === 'number') {
+            length = prefix.length + this.space;
+        }
+        if (type === 'string') {
+            s = this.space;
+            length = prefix.length + this.space.length;
+        }
+        return s.repeat(length);
     }
 }
 
@@ -95,7 +116,5 @@ function booleanNotAllowed(key, value) {
     if (typeof value === 'boolean') return '<hidden>'
     return value;
 }
-const Toml = new TOML();
-
-console.log(Toml.stringify(test, [{ u: 1 }]))
-// const entries = Object.entries(test);
+const Toml = new TOML(); 
+console.log(Toml.stringify(test, ['a', 'b', 'g'], '-'))
