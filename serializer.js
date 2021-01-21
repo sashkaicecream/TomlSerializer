@@ -5,8 +5,9 @@ class TOML {
         this.space = space;
         if (replacer instanceof Function) this.replacer = replacer;
         if (Array.isArray(replacer)) {
-            const filtered = replacer.reduce((acc, val) => {
-                acc[val] = value[val];
+            const filtered = replacer.reduce((acc, key) => {
+                const cur = value[key];
+                if (cur !== undefined) acc[key] = cur;
                 return acc;
             }, {});
             return this.serialize(filtered);
@@ -17,7 +18,7 @@ class TOML {
     serialize(value, key, prefix, postfix) {
         const replaced = this.replacer ? this.replacer(key, value) : value;
         const serializer = this.rules[this.checkType(replaced)];
-        if (!!serializer) return serializer(replaced, key, prefix, postfix);
+        if (serializer) return serializer(replaced, key, prefix, postfix);
     }
 
     checkType(el) {
@@ -43,7 +44,8 @@ class TOML {
             return `${prefix}${key}[${mapped}]${postfix}`;
         },
         objectArray: (arr, key, prefix = '', postfix = '') => {
-            return arr.map(el => `${this.serialize(el, key, `${prefix}[`, `]${postfix}`)}`).join('');
+            const mapped = arr.map(el => this.serialize(el, key, `${prefix}[`, `]${postfix}`));
+            return mapped.join('');
         },
         object: (o, prev, prefix = '', postfix = '') => {
             let s = prev ? `${prefix}${prev}${postfix}` : '';
@@ -89,14 +91,13 @@ class TOML {
         }
         if (type === 'string') {
             s = this.space;
-            length = prefix.length + this.space.length;
         }
         return s.repeat(length);
     }
 }
 
 const test = {
-    a: 1,
+    a: 0,
     b: 'asdf',
     "c.r": { 
         d: { 
@@ -112,9 +113,11 @@ const test = {
         { x: { p: 19 } }
     ]
 }
+
 function booleanNotAllowed(key, value) {
     if (typeof value === 'boolean') return '<hidden>'
     return value;
 }
+
 const Toml = new TOML(); 
-console.log(Toml.stringify(test, ['a', 'b', 'g'], '-'))
+console.log(Toml.stringify(test, booleanNotAllowed))
